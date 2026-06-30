@@ -3,7 +3,7 @@ import reactLogo from './assets/react.svg'
 import viteLogo from './assets/vite.svg'
 import heroImg from './assets/hero.png'
 import './App.css'
-
+//configuracion inicial del app.tsx que es el archivo base de prueba
 function App() {
   const [count, setCount] = useState(0)
 
