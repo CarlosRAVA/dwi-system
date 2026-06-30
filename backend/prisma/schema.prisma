@@ -1,7 +1,8 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// ============================================================
+// DWI SYSTEM - Esquema de Base de Datos
+// Sistema de Gestión de Reparaciones de Celulares
+// Generado con: Prisma ORM | PostgreSQL | Supabase
+// ============================================================
 
 generator client {
   provider = "prisma-client"
@@ -10,4 +11,325 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum RolUsuario {
+  admin
+  tecnico
+  recepcionista
+
+  @@map("rol_usuario")
+}
+
+enum PrioridadTicket {
+  baja
+  media
+  alta
+  urgente
+
+  @@map("prioridad_ticket")
+}
+
+enum EstadoTicket {
+  recibido
+  en_diagnostico
+  esperando_aprobacion
+  aprobado
+  esperando_refaccion
+  en_reparacion
+  listo_para_entrega
+  entregado
+  cancelado
+
+  @@map("estado_ticket")
+}
+
+enum EstadoPago {
+  pendiente
+  parcial
+  pagado
+  reembolsado
+
+  @@map("estado_pago")
+}
+
+enum TipoFotoTicket {
+  ingreso
+  proceso
+  salida
+
+  @@map("tipo_foto_ticket")
+}
+
+enum TipoAsignacionTicket {
+  principal
+  escalamiento
+  apoyo
+
+  @@map("tipo_asignacion_ticket")
+}
+
+enum TipoPagoTicket {
+  anticipo
+  abono
+  liquidacion
+
+  @@map("tipo_pago_ticket")
+}
+
+enum MetodoPagoTicket {
+  efectivo
+  transferencia
+  tarjeta
+
+  @@map("metodo_pago_ticket")
+}
+
+// ============================================================
+// MODELOS
+// ============================================================
+
+/// Personal interno del taller (administradores, técnicos, recepcionistas)
+model Usuario {
+  id_usuario          String     @id @default(uuid()) @map("id_usuario")
+  nombre_completo     String     @map("nombre_completo")
+  correo              String     @unique @map("correo")
+  telefono            String?    @map("telefono")
+  contrasena_hash     String     @map("contrasena_hash")
+  rol                 RolUsuario @map("rol")
+  activo              Boolean    @default(true) @map("activo")
+  fecha_creacion      DateTime   @default(now()) @map("fecha_creacion")
+  fecha_actualizacion DateTime   @updatedAt @map("fecha_actualizacion")
+
+  // Relaciones
+  tickets_creados       TicketReparacion[]      @relation("TicketCreador")
+  tickets_responsable   TicketReparacion[]      @relation("TicketResponsable")
+  historial_registrados HistorialEstadoTicket[] @relation("HistorialUsuarioRegistro")
+  presupuestos_creados  PresupuestoReparacion[] @relation("PresupuestoCreador")
+  fotos_subidas         FotoTicket[]            @relation("FotoUsuarioSubio")
+  asignaciones_tecnico  AsignacionTicket[]      @relation("AsignacionTecnico")
+  pagos_recibidos       PagoTicket[]            @relation("PagoUsuarioRecibio")
+
+  @@map("usuarios")
+}
+
+/// Cliente que lleva su celular al taller (sin cuenta de acceso)
+model Cliente {
+  id_cliente          String   @id @default(uuid()) @map("id_cliente")
+  nombre_completo     String   @map("nombre_completo")
+  telefono            String   @map("telefono")
+  correo              String?  @map("correo")
+  fecha_creacion      DateTime @default(now()) @map("fecha_creacion")
+  fecha_actualizacion DateTime @updatedAt @map("fecha_actualizacion")
+
+  // Relaciones
+  dispositivos Dispositivo[]
+
+  @@map("clientes")
+}
+
+/// Catálogo de marcas de celulares (Apple, Samsung, Xiaomi, etc.)
+model Marca {
+  id_marca       String   @id @default(uuid()) @map("id_marca")
+  nombre         String   @unique @map("nombre")
+  activo         Boolean  @default(true) @map("activo")
+  fecha_creacion DateTime @default(now()) @map("fecha_creacion")
+
+  // Relaciones
+  modelos Modelo[]
+
+  @@map("marcas")
+}
+
+/// Catálogo de modelos de celulares agrupados por marca
+model Modelo {
+  id_modelo      String   @id @default(uuid()) @map("id_modelo")
+  id_marca       String   @map("id_marca")
+  nombre         String   @map("nombre")
+  activo         Boolean  @default(true) @map("activo")
+  fecha_creacion DateTime @default(now()) @map("fecha_creacion")
+
+  // Relaciones
+  marca        Marca         @relation(fields: [id_marca], references: [id_marca])
+  dispositivos Dispositivo[]
+
+  @@unique([id_marca, nombre], name: "uq_marca_modelo")
+  @@index([id_marca])
+  @@map("modelos")
+}
+
+/// Dispositivo (celular) registrado de un cliente
+model Dispositivo {
+  id_dispositivo      String   @id @default(uuid()) @map("id_dispositivo")
+  id_cliente          String   @map("id_cliente")
+  id_modelo           String   @map("id_modelo")
+  imei                String?  @map("imei")
+  color               String?  @map("color")
+  fecha_creacion      DateTime @default(now()) @map("fecha_creacion")
+  fecha_actualizacion DateTime @updatedAt @map("fecha_actualizacion")
+
+  // Relaciones
+  cliente Cliente            @relation(fields: [id_cliente], references: [id_cliente])
+  modelo  Modelo             @relation(fields: [id_modelo], references: [id_modelo])
+  tickets TicketReparacion[]
+
+  @@index([id_cliente])
+  @@index([id_modelo])
+  @@map("dispositivos")
+}
+
+/// Ticket de reparación — entidad central del sistema
+model TicketReparacion {
+  id_ticket                      String          @id @default(uuid()) @map("id_ticket")
+  folio_ticket                   String          @unique @map("folio_ticket")
+  id_dispositivo                 String          @map("id_dispositivo")
+  id_usuario_creador             String          @map("id_usuario_creador")
+  id_usuario_responsable_actual  String?         @map("id_usuario_responsable_actual")
+  falla_reportada                String          @map("falla_reportada")
+  diagnostico_tecnico            String?         @map("diagnostico_tecnico")
+  prioridad                      PrioridadTicket @map("prioridad")
+  estado_actual                  EstadoTicket    @default(recibido) @map("estado_actual")
+  estado_pago                    EstadoPago      @default(pendiente) @map("estado_pago")
+  accesorios_recibidos           String?         @map("accesorios_recibidos")
+  contrasena_dispositivo_cifrada String?         @map("contrasena_dispositivo_cifrada")
+  estado_fisico                  String?         @map("estado_fisico")
+  fecha_recepcion                DateTime        @default(now()) @map("fecha_recepcion")
+  fecha_estimada_entrega         DateTime?       @map("fecha_estimada_entrega")
+  fecha_entrega                  DateTime?       @map("fecha_entrega")
+  fecha_creacion                 DateTime        @default(now()) @map("fecha_creacion")
+  fecha_actualizacion            DateTime        @updatedAt @map("fecha_actualizacion")
+
+  // Relaciones
+  dispositivo         Dispositivo             @relation(fields: [id_dispositivo], references: [id_dispositivo])
+  usuario_creador     Usuario                 @relation("TicketCreador", fields: [id_usuario_creador], references: [id_usuario])
+  usuario_responsable Usuario?                @relation("TicketResponsable", fields: [id_usuario_responsable_actual], references: [id_usuario])
+  historial_estados   HistorialEstadoTicket[]
+  presupuesto         PresupuestoReparacion?
+  fotos               FotoTicket[]
+  asignaciones        AsignacionTicket[]
+  refacciones         RefaccionTicket[]
+  pagos               PagoTicket[]
+
+  @@index([id_dispositivo])
+  @@index([id_usuario_creador])
+  @@index([id_usuario_responsable_actual])
+  @@index([folio_ticket])
+  @@index([estado_actual])
+  @@map("tickets_reparacion")
+}
+
+/// Línea de tiempo de cambios de estado de un ticket
+model HistorialEstadoTicket {
+  id_historial        String       @id @default(uuid()) @map("id_historial")
+  id_ticket           String       @map("id_ticket")
+  estado              EstadoTicket @map("estado")
+  comentario          String?      @map("comentario")
+  id_usuario_registro String?      @map("id_usuario_registro")
+  fecha_registro      DateTime     @default(now()) @map("fecha_registro")
+
+  // Relaciones
+  ticket           TicketReparacion @relation(fields: [id_ticket], references: [id_ticket])
+  usuario_registro Usuario?         @relation("HistorialUsuarioRegistro", fields: [id_usuario_registro], references: [id_usuario])
+
+  @@index([id_ticket])
+  @@index([id_usuario_registro])
+  @@map("historial_estados_ticket")
+}
+
+/// Presupuesto de reparación asociado 1:1 con un ticket
+model PresupuestoReparacion {
+  id_presupuesto     String    @id @default(uuid()) @map("id_presupuesto")
+  id_ticket          String    @unique @map("id_ticket")
+  costo_mano_obra    Decimal   @default(0) @map("costo_mano_obra") @db.Decimal(10, 2)
+  costo_refacciones  Decimal   @default(0) @map("costo_refacciones") @db.Decimal(10, 2)
+  costo_total        Decimal   @map("costo_total") @db.Decimal(10, 2)
+  dias_estimados     Int?      @map("dias_estimados")
+  aprobado_cliente   Boolean?  @map("aprobado_cliente")
+  fecha_aprobacion   DateTime? @map("fecha_aprobacion")
+  id_usuario_creador String?   @map("id_usuario_creador")
+  fecha_creacion     DateTime  @default(now()) @map("fecha_creacion")
+
+  // Relaciones
+  ticket          TicketReparacion @relation(fields: [id_ticket], references: [id_ticket])
+  usuario_creador Usuario?         @relation("PresupuestoCreador", fields: [id_usuario_creador], references: [id_usuario])
+
+  @@index([id_usuario_creador])
+  @@map("presupuestos_reparacion")
+}
+
+/// Evidencia fotográfica del dispositivo (ingreso, proceso, salida)
+model FotoTicket {
+  id_foto          String         @id @default(uuid()) @map("id_foto")
+  id_ticket        String         @map("id_ticket")
+  url_foto         String         @map("url_foto")
+  tipo_foto        TipoFotoTicket @map("tipo_foto")
+  id_usuario_subio String?        @map("id_usuario_subio")
+  fecha_creacion   DateTime       @default(now()) @map("fecha_creacion")
+
+  // Relaciones
+  ticket        TicketReparacion @relation(fields: [id_ticket], references: [id_ticket])
+  usuario_subio Usuario?         @relation("FotoUsuarioSubio", fields: [id_usuario_subio], references: [id_usuario])
+
+  @@index([id_ticket])
+  @@index([id_usuario_subio])
+  @@map("fotos_ticket")
+}
+
+/// Historial de asignaciones de técnicos a un ticket
+model AsignacionTicket {
+  id_asignacion      String               @id @default(uuid()) @map("id_asignacion")
+  id_ticket          String               @map("id_ticket")
+  id_usuario_tecnico String               @map("id_usuario_tecnico")
+  tipo_asignacion    TipoAsignacionTicket @map("tipo_asignacion")
+  motivo             String?              @map("motivo")
+  fecha_asignacion   DateTime             @default(now()) @map("fecha_asignacion")
+
+  // Relaciones
+  ticket          TicketReparacion @relation(fields: [id_ticket], references: [id_ticket])
+  usuario_tecnico Usuario          @relation("AsignacionTecnico", fields: [id_usuario_tecnico], references: [id_usuario])
+
+  @@index([id_ticket])
+  @@index([id_usuario_tecnico])
+  @@map("asignaciones_ticket")
+}
+
+/// Refacciones utilizadas en la reparación (sin control de inventario)
+model RefaccionTicket {
+  id_refaccion_ticket String   @id @default(uuid()) @map("id_refaccion_ticket")
+  id_ticket           String   @map("id_ticket")
+  nombre_refaccion    String   @map("nombre_refaccion")
+  cantidad            Int      @default(1) @map("cantidad")
+  costo_unitario      Decimal? @map("costo_unitario") @db.Decimal(10, 2)
+  observaciones       String?  @map("observaciones")
+  fecha_creacion      DateTime @default(now()) @map("fecha_creacion")
+
+  // Relaciones
+  ticket TicketReparacion @relation(fields: [id_ticket], references: [id_ticket])
+
+  @@index([id_ticket])
+  @@map("refacciones_ticket")
+}
+
+/// Registro de pagos realizados por el cliente
+model PagoTicket {
+  id_pago            String           @id @default(uuid()) @map("id_pago")
+  id_ticket          String           @map("id_ticket")
+  monto              Decimal          @map("monto") @db.Decimal(10, 2)
+  tipo_pago          TipoPagoTicket   @map("tipo_pago")
+  metodo_pago        MetodoPagoTicket @map("metodo_pago")
+  id_usuario_recibio String?          @map("id_usuario_recibio")
+  observaciones      String?          @map("observaciones")
+  fecha_pago         DateTime         @default(now()) @map("fecha_pago")
+
+  // Relaciones
+  ticket          TicketReparacion @relation(fields: [id_ticket], references: [id_ticket])
+  usuario_recibio Usuario?         @relation("PagoUsuarioRecibio", fields: [id_usuario_recibio], references: [id_usuario])
+
+  @@index([id_ticket])
+  @@index([id_usuario_recibio])
+  @@map("pagos_ticket")
 }
